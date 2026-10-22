@@ -9,6 +9,24 @@ KST = timezone(timedelta(hours=9))
 HOUR = 9
 
 
+def collection_result(keyword, row, now, running=False):
+    payload = json.loads(row['payload']) if row['payload'] else {'keyword': keyword, 'posts': [], 'sources': [], 'searchedAt': ''}
+    status = 'pending'
+    if row['day']:
+        status = 'error' if row['error'] else 'complete' if row['finished_at'] else 'running' if running else 'interrupted'
+    slot = now.replace(hour=HOUR, minute=0, second=0, microsecond=0)
+    if row['day'] and row['day'] >= now.date().isoformat():
+        slot += timedelta(days=1)
+    elif not row['day'] or now >= slot:
+        slot = now
+    return {**payload, 'collection': {
+        'mode': 'daily', 'status': status, 'timezone': 'Asia/Seoul',
+        'lastAttemptAt': row['started_at'], 'collectedAt': row['collected_at'],
+        'nextRunAt': slot.isoformat(),
+        'message': row['error'] or ('수집이 중단되었습니다. 오늘은 재수집하지 않고 다음 일정에 수집합니다.' if status == 'interrupted' else ''),
+    }}
+
+
 class DailyStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -65,21 +83,7 @@ class DailyStore:
                                 ON c.keyword=t.keyword WHERE t.keyword=?''', (keyword,)).fetchone()
         if row is None:
             return None
-        payload = json.loads(row['payload']) if row['payload'] else {'keyword': keyword, 'posts': [], 'sources': [], 'searchedAt': ''}
-        status = 'pending'
-        if row['day']:
-            status = 'error' if row['error'] else 'complete' if row['finished_at'] else 'running' if keyword in self.running else 'interrupted'
-        slot = now.replace(hour=HOUR, minute=0, second=0, microsecond=0)
-        if row['day'] and row['day'] >= now.date().isoformat():
-            slot += timedelta(days=1)
-        elif not row['day'] or now >= slot:
-            slot = now
-        return {**payload, 'collection': {
-            'mode': 'daily', 'status': status, 'timezone': 'Asia/Seoul',
-            'lastAttemptAt': row['started_at'], 'collectedAt': row['collected_at'],
-            'nextRunAt': slot.isoformat(),
-            'message': row['error'] or ('수집 중 서버가 종료되었습니다. 오늘은 재수집하지 않고 다음 일정에 수집합니다.' if status == 'interrupted' else ''),
-        }}
+        return collection_result(keyword, row, now, keyword in self.running)
 
     def run_due(self, collector, now=None, stop=None):
         for topic in self.topics():

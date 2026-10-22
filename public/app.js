@@ -4,6 +4,9 @@ import {exactMatch,matchesExact} from './keyword-match.mjs';
 
 const $ = id => document.getElementById(id);
 const staticMode = document.documentElement.dataset.mode === 'static';
+const cloudMode = document.documentElement.dataset.mode === 'cloud';
+const apiBase = cloudMode ? document.documentElement.dataset.api : '';
+let workspaceKey = '';
 let snapshot;
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const SOURCE_DEFAULTS = {
@@ -24,6 +27,7 @@ function saveStorage(key, value) {
 }
 const staticExact = Object.assign(Object.create(null),readStorage('moa.staticExact', {}));
 const topicSettings = rows => rows.map(topic => ({...topic,exact:typeof staticExact[topic.keyword] === 'boolean' ? staticExact[topic.keyword] : topic.exact}));
+const apiHeaders = extra => cloudMode ? {...extra,Authorization:'Bearer ' + workspaceKey} : extra;
 async function readData(resource, signal) {
   if (staticMode) {
     if (!snapshot || resource.startsWith('search?')) {
@@ -39,7 +43,7 @@ async function readData(resource, signal) {
     if (!Object.hasOwn(snapshot.feeds,keyword)) throw new Error('아직 등록되지 않은 키워드입니다. 왼쪽의 수집 키워드 설정에서 등록하고 GitHub에 저장해 주세요.');
     return snapshot.feeds[keyword];
   }
-  const response = await fetch('/api/' + resource,{signal});
+  const response = await fetch(apiBase + '/api/' + resource,{signal,headers:resource === 'sources' ? {} : apiHeaders({})});
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || '요청에 실패했습니다.');
   return result;
@@ -128,7 +132,7 @@ function renderTopics() {
   $('topics').innerHTML = topics.length ? topics.map((topic,index) => `<div class="topic-row ${!savedView && currentKeyword === topic.keyword ? 'active' : ''}"><button class="topic-button" data-topic="${index}" title="${escapeHtml(topic.keyword)}${topic.exact ? ' · 정확한 단어만' : ''}${topic.exclude.length ? ' · 제외: ' + escapeHtml(topic.exclude.join(', ')) : ''}"><span class="topic-hash">#</span><span class="topic-name">${escapeHtml(topic.keyword)}</span></button>${staticMode ? '' : `<button class="topic-delete" data-delete="${index}" aria-label="${escapeHtml(topic.keyword)} 관심 키워드 삭제">×</button>`}</div>`).join('') : '<span class="topic-empty">자주 찾는 키워드를 담아보세요.</span>';
 }
 async function updateTopic(data) {
-  const response = await fetch('/api/topics', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const response = await fetch(apiBase + '/api/topics', {method:'POST',headers:apiHeaders({'Content-Type':'application/json'}),body:JSON.stringify(data)});
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || '키워드를 저장하지 못했습니다.');
   if (!Array.isArray(result.topics)) throw new Error('키워드 목록을 읽지 못했습니다.');
@@ -206,8 +210,8 @@ function renderFeed(data) {
     return;
   }
   if (!data.length) {
-    if (staticMode && !savedView && !topics.length && !searchError) {
-      $('feed').innerHTML = '<div class="empty-state"><span class="empty-symbol">＋</span><h3>수집할 키워드를 등록해 주세요</h3><p>왼쪽의 수집 키워드 설정을 눌러 GitHub에서 저장하세요.<br>첫 수집 후 결과가 표시됩니다. 이후 매일 오전 9시(한국시간)에 갱신됩니다.</p></div>';
+    if ((staticMode || cloudMode) && !savedView && !topics.length && !searchError) {
+      $('feed').innerHTML = `<div class="empty-state"><span class="empty-symbol">＋</span><h3>수집할 키워드를 등록해 주세요</h3><p>${cloudMode ? '위 검색창에 키워드를 입력하거나 키워드 추가를 눌러 주세요.<br>등록 즉시 첫 수집을 시작하고, 이후 하루 한 번 갱신합니다.' : '왼쪽의 수집 키워드 설정을 눌러 GitHub에서 저장하세요.<br>첫 수집 후 결과가 표시됩니다. 이후 매일 오전 9시(한국시간)에 갱신됩니다.'}</p></div>`;
       return;
     }
     if (!savedView && dailyInfo && ['pending','running'].includes(dailyInfo.status)) {
@@ -243,7 +247,7 @@ function render() {
   $('search-button').disabled = loading || exactSaving;
   $('refresh').disabled = loading || exactSaving;
   $('exact-match').disabled = !initialized || savedView || exactSaving;
-  $('refresh').title = staticMode || dailyInfo ? '저장된 결과 새로고침 · 추가 수집 없음' : '다시 검색 (5분 캐시)';
+  $('refresh').title = staticMode || cloudMode || dailyInfo ? '저장된 결과 새로고침 · 추가 수집 없음' : '다시 검색 (5분 캐시)';
   $('daily-collection').hidden = savedView || !dailyInfo;
   if (dailyInfo) {
     const state = {pending:'첫 수집 대기',running:'수집 중',complete:'수집 완료',error:'수집 실패',interrupted:'수집 중단'}[dailyInfo.status] || '';
@@ -252,6 +256,7 @@ function render() {
   $('export').disabled = !data.length || (loading && !savedView);
   const notes = [];
   if (staticMode) notes.push('하루 1회 수집한 등록 키워드의 결과입니다. 정확한 단어 체크와 글 저장은 이 브라우저에 보관됩니다.');
+  if (cloudMode && !currentKeyword) notes.push('처음 등록하면 바로 수집합니다. 등록 목록은 이 브라우저에 연결되며, 이후 매일 오전 9시(한국시간)부터 하루 한 번 갱신됩니다.');
   if (dailyInfo?.message) notes.push(dailyInfo.message);
   if (dailyInfo?.collectedAt) notes.push('저장된 수집 결과입니다. 새로고침해도 추가로 수집하지 않습니다.');
   if (exactMode && !savedView) notes.push('정확한 단어만: 제목·요약에서 띄어쓰기·문장부호로 구분된 단어를 찾습니다. 붙은 조사·다른 단어는 제외합니다.');
@@ -290,6 +295,11 @@ async function search(keyword, polling=false, exactOverride) {
   $('last-updated').textContent = '검색 중'; $('notice').hidden = true;
   render();
   try {
+    if (cloudMode && !topics.some(t => t.keyword === keyword)) {
+      if (!topicsReady) throw new Error('키워드 목록을 불러오지 못했습니다. 새로고침해 주세요.');
+      await updateTopic({keyword,exclude:[],exact:exactMode});
+      if (sequence !== searchSequence) return;
+    }
     const params = new URLSearchParams({q:keyword});
     if (topics.some(t => t.keyword === keyword)) params.set('daily','1');
     const result = await readData('search?' + params,controller.signal);
@@ -382,9 +392,11 @@ $('topic-form').addEventListener('submit',async event => {
   const index=topics.findIndex(t=>t.keyword===keyword);
   if(index<0 && topics.length>=30)return toast('관심 키워드는 최대 30개까지 담을 수 있어요.');
   const button=$('topic-form').querySelector('[type="submit"]');button.disabled=true;
+  const buttonLabel=button.textContent;
+  if(cloudMode && index<0)button.textContent='등록하고 첫 수집 중…';
   try {await updateTopic({keyword,exclude,exact:$('topic-exact').checked});$('topic-dialog').close();search(keyword);toast('하루 1회 수집할 키워드를 저장했어요.');}
   catch(error){toast(error.message);}
-  finally{button.disabled=false;}
+  finally{button.disabled=false;button.textContent=buttonLabel;}
 });
 $('export').addEventListener('click',() => {
   const data=filteredPosts();if(!data.length)return;
@@ -401,6 +413,16 @@ document.querySelectorAll('[data-select-sources]').forEach(button => button.addE
 }));
 async function initialize() {
   $('search-button').disabled = true;
+  if (cloudMode) {
+    try {
+      workspaceKey=readStorage('moa.workspace','');
+      if(!/^[0-9a-f]{64}$/.test(workspaceKey)) {
+        workspaceKey=Array.from(crypto.getRandomValues(new Uint8Array(32)),value=>value.toString(16).padStart(2,'0')).join('');
+        localStorage.setItem('moa.workspace',JSON.stringify(workspaceKey));
+        localStorage.removeItem('moa.cloudMigrated');
+      }
+    } catch {toast('키워드를 보관하려면 이 사이트의 브라우저 저장소를 허용해 주세요.');return;}
+  }
   const mobileSources = matchMedia('(max-width:767px)');
   const sourcePanel = document.querySelector('.source-section');
   const adaptSourcePanel = () => { sourcePanel.open = !mobileSources.matches; };
@@ -424,9 +446,10 @@ async function initialize() {
     if (!Array.isArray(result.topics)) throw new Error('키워드 목록을 읽지 못했습니다.');
     const legacy = topics;
     topics = result.topics;
-    if (!staticMode && !readStorage('moa.topicsMigrated',false)) {
+    const migrationKey=cloudMode ? 'moa.cloudMigrated' : 'moa.topicsMigrated';
+    if (!staticMode && !readStorage(migrationKey,false)) {
       for (const topic of legacy) if (!topics.some(t => t.keyword === topic.keyword)) await updateTopic(topic);
-      saveStorage('moa.topicsMigrated',true);
+      saveStorage(migrationKey,true);
     }
     saveStorage('moa.topics',topics);
     topicsReady = true;
@@ -447,8 +470,17 @@ async function initialize() {
     $('last-updated').textContent='키워드 등록 대기';
     document.querySelector('.suggestions').innerHTML='<span>등록된 키워드</span>' + topics.slice(0,6).map(topic=>`<button data-query="${escapeHtml(topic.keyword)}">${escapeHtml(topic.keyword)}</button>`).join('');
   }
+  if (cloudMode) {
+    document.querySelector('.local-badge').innerHTML='<i></i> 바로 등록 · 하루 1회';
+    $('search-button').innerHTML='등록·결과 보기 <span>↗</span>';
+    $('keyword').value=topics[0]?.keyword || '';
+    $('keyword').placeholder='등록하고 바로 수집할 키워드';
+    $('last-updated').textContent='키워드 등록 대기';
+    $('topic-dialog').querySelector('form > p').textContent='등록 즉시 첫 수집을 시작하고, 완료되면 결과를 보여줍니다. 이후 매일 오전 9시(한국시간)부터 하루 한 번 갱신합니다. 등록 목록은 이 브라우저에 연결됩니다.';
+    document.querySelector('.topic-schedule').textContent='첫 등록 즉시 수집 · 이후 매일 오전 9시 · 한국시간';
+  }
   renderSourceControls(); render();
   if (storageError) toast('브라우저 저장소를 읽을 수 없어 새 워크스페이스로 시작했어요.');
-  if (topics.length || !staticMode) search(topics[0]?.keyword || $('keyword').value);
+  if (topics.length || (!staticMode && !cloudMode)) search(topics[0]?.keyword || $('keyword').value);
 }
 initialize();

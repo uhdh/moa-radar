@@ -38,6 +38,8 @@ def main():
         html = (root / 'site/index.html').read_text(encoding='utf-8')
         assert 'data-mode="static"' in html and 'href="./style.css"' in html and 'src="/app.js"' not in html
         assert len(snapshot['sources']) == 19
+        build_site(restart,root/'cloud','uhdh/moa-radar','https://moa-radar-api.vercel.app')
+        assert 'data-mode="cloud" data-api="https://moa-radar-api.vercel.app"' in (root/'cloud/index.html').read_text(encoding='utf-8')
         # Retain today's claim after delete/re-add, but do not publish deleted keyword data.
         removed = load_store(root / 'removed.sqlite3', state, [])
         save_state(removed, state)

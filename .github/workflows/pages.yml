@@ -40,8 +40,16 @@ jobs:
           python check_publish.py
           node check_dates.mjs
           node check_keyword.mjs
-      - name: Collect saved keywords and build site
-        run: python publish.py --collect --push-state --repository "$GITHUB_REPOSITORY"
+      - name: Run daily cloud collection
+        if: github.event_name != 'push'
+        env:
+          MOA_API_URL: ${{ vars.MOA_API_URL }}
+          MOA_CRON_SECRET: ${{ secrets.MOA_CRON_SECRET }}
+        run: python cloud_collect.py
+      - name: Build site
+        env:
+          MOA_API_URL: ${{ vars.MOA_API_URL }}
+        run: python publish.py --repository "$GITHUB_REPOSITORY" --api-base "$MOA_API_URL"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

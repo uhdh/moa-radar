@@ -1,0 +1,11 @@
+data/
+state/
+_site/
+__pycache__/
+.env*
+public/
+check*
+README.md
+REA-FINDINGS.md
+.agents/
+skills-lock.json

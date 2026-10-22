@@ -2,32 +2,32 @@
 
 원하는 키워드로 커뮤니티·블로그·카페·SNS의 공개 검색 결과를 한곳에서 보는 웹입니다. PR Agent의 18개 소스에서 언론을 제외한 17개에 **X·Threads를 더한 19개**를 대상으로 검색합니다. 유튜브도 포함됩니다.
 
-## GitHub 배포판
+## GitHub Pages + Vercel 배포판
 
 사이트: https://uhdh.github.io/moa-radar/
 
-GitHub Pages에서 웹 화면을 제공하고 GitHub Actions가 한국시간 매일 오전 9시에 수집합니다. PC를 켜둘 필요가 없습니다. 예약 실행은 GitHub 상황에 따라 지연·누락될 수 있으며, 공개 저장소에서 60일 동안 활동이 없으면 예약이 비활성화될 수 있습니다.
+사이트 검색창에 키워드를 입력하거나 **키워드 추가**를 누르면 Vercel API가 등록하고 **바로 첫 수집**을 진행합니다. 완료되면 결과를 표시하며, 이후 GitHub Actions가 한국시간 매일 오전 9시부터 하루 한 번 갱신합니다. PC를 켜둘 필요가 없습니다. 예약 실행은 GitHub 상황에 따라 지연·누락될 수 있으며, 공개 저장소에서 60일 동안 활동이 없으면 예약이 비활성화될 수 있습니다.
 
-사이트 왼쪽 **수집 키워드 설정**을 누르거나 [keywords.json 편집](https://github.com/uhdh/moa-radar/edit/main/keywords.json)을 여세요. GitHub에 로그인한 저장소 소유자가 아래 형식으로 수정하고 **Commit changes**로 저장하면 첫 수집과 배포가 자동 실행됩니다. 초기 목록은 비어 있습니다.
+- 첫 수집은 소스의 응답을 기다립니다. 완료 전에는 수집 중 상태를 표시합니다.
+- 등록된 키워드 클릭·새로고침·정확한 단어 체크 변경은 오늘의 수집을 반복하지 않습니다.
+- 첫 수집도 한국시간 기준 오늘의 1회에 포함됩니다. 실패·중단도 당일에는 재시도하지 않으며 이전 결과가 있으면 보존합니다.
+- PostgreSQL의 원자적 수집 시작 기록을 네트워크 요청 전에 저장하므로 동시 요청·Vercel 재배포·다른 브라우저에서 같은 단어 등록·삭제 후 재등록으로 제한을 우회하지 않습니다.
+- 키워드 목록·제외 단어·정확한 단어 설정은 DB에 저장하고 **현재 브라우저의 임의 접근 키**로 구분합니다. 다른 브라우저의 목록을 수정할 수 없습니다. 계정 로그인과 기기 간 목록 동기화는 없습니다. 사이트 저장소를 지우면 목록 접근 키도 사라집니다.
+- 글 저장은 현재 브라우저에 보관합니다. 등록 키워드와 수집 결과를 GitHub 저장소에 커밋하지 않습니다. 동일한 키워드의 공개 게시글 수집 결과는 서버에서 재사용합니다.
 
-```json
-[
-  {"keyword": "원하는 키워드", "exclude": [], "exact": false},
-  {"keyword": "다른 키워드", "exclude": ["광고", "홍보"], "exact": true}
-]
-```
+배포 구성은 GitHub Pages(화면), Vercel Python Functions(API), Neon Free PostgreSQL(등록 목록·수집 기록), GitHub Actions(하루 1회 예약)입니다. [Actions 상태](https://github.com/uhdh/moa-radar/actions/workflows/pages.yml)에서 예약 실행을 확인합니다. GitHub 파일 편집 없이 사이트에서 등록·삭제할 수 있습니다.
 
-- `keyword`: 수집할 검색어, 1~80자, 최대 30개.
-- `exclude`: 제목·요약에서 제외할 단어 목록. 필요 없으면 `[]`.
-- `exact`: 정확한 단어만 표시할지 여부. `true` 또는 `false`.
-- 삭제하려면 해당 항목을 지우세요. 전부 지우려면 `[]`로 저장합니다.
-- 공개 저장소이므로 **키워드·소스 코드·수집 결과가 공개**됩니다. 비밀 정보는 넣지 마세요.
+무료 개인용 프로토타입의 한도는 브라우저당 30개, 서비스 전체 서로 다른 수집어 30개입니다. 새 등록은 IP당 하루 30개, 전체 하루 100개로 제한합니다. 이미 등록한 결과 읽기는 이 등록 한도를 사용하지 않습니다. 다중 사용자 서비스로 확장할 때는 이 한도와 계정 인증을 함께 변경해야 합니다.
 
-[Actions 실행 상태](https://github.com/uhdh/moa-radar/actions/workflows/pages.yml)에서 수집·배포 결과를 확인할 수 있습니다. 수동 **Run workflow**도 오늘 이미 시도한 키워드는 재수집하지 않습니다. 수집 시작 기록을 원격 저장소에 먼저 저장하므로 중단·실패도 오늘의 1회에 포함됩니다. 설정 저장 중 동시 수정으로 기록 저장이 실패하면 그 키워드는 수집하지 않습니다. 이전 결과는 유지합니다.
+운영 설정:
 
-배포판에서는 **등록한 키워드의 저장된 결과만** 읽습니다. 새 키워드는 설정 파일에 추가해야 하며 즉석 수집은 하지 않습니다. 날짜 정렬·소스 필터·CSV 내보내기·X/Threads/유튜브 바로보기는 그대로 쓸 수 있습니다. 정확한 단어 체크의 변경과 글 저장은 현재 브라우저에 보관됩니다. 모든 기기에 적용할 정확한 단어 기본값과 제외 단어는 `keywords.json`에서 수정하세요.
+- Vercel의 `DATABASE_URL`은 Neon 연동으로 주입합니다. 새 DB는 `python cloud.py`로 테이블을 초기화합니다.
+- Vercel `CRON_SECRET`과 GitHub Actions secret `MOA_CRON_SECRET`은 같은 임의 비밀값입니다. 브라우저나 저장소에는 넣지 않습니다.
+- GitHub variable `MOA_API_URL`은 `https://moa-radar-api.vercel.app`입니다.
+- `cloud_collect.py`가 인증된 예약 API를 호출합니다. 읽기 API는 수집을 시작하지 않습니다.
+- DB를 연결한 검증: `python check_cloud.py` (`DATABASE_URL`, `CRON_SECRET` 필요). 고유 테스트 행만 만들고 제거합니다.
 
-수집 상태는 `state/collections.json`에, 정적 배포 산출물은 Actions Pages artifact에 저장합니다. 로컬 `data/radar.sqlite3`와 브라우저의 저장한 글은 배포하지 않습니다. 아래 실행·사용 설명은 Python 로컬 서버판 기준입니다.
+`keywords.json`·`state/collections.json`은 이전 정적 배포용이며 현재 클라우드 등록 목록으로 사용하지 않습니다. 로컬 `data/radar.sqlite3`와 브라우저 접근 키는 저장소·배포 묶음에 포함하지 않습니다. 아래 실행·사용 설명은 별도 Python 로컬 서버판 기준입니다.
 
 근거: [GitHub Pages 워크플로](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages), [예약 실행 제약](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 

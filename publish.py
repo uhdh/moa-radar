@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 from tempfile import TemporaryDirectory
+from urllib.parse import urlsplit
 
 from daily import DailyStore, KST
 from server import SOURCES, search_all, valid_keyword
@@ -76,12 +77,18 @@ def save_state(store, path, push=False):
             git('push', 'origin', 'HEAD:main')
 
 
-def build_site(store, destination, repository):
+def build_site(store, destination, repository, api_base=''):
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
         raise ValueError('Invalid GitHub repository')
     shutil.copytree(ROOT / 'public', destination, dirs_exist_ok=True)
     index = destination / 'index.html'
-    index.write_text(index.read_text(encoding='utf-8').replace('<html lang="ko">', '<html lang="ko" data-mode="static">'), encoding='utf-8')
+    mode = '<html lang="ko" data-mode="static">'
+    if api_base:
+        parsed = urlsplit(api_base)
+        if parsed.scheme != 'https' or not re.fullmatch(r'[a-z0-9-]+\.vercel\.app', parsed.netloc) or parsed.path not in ('','/') or parsed.query or parsed.fragment:
+            raise ValueError('Invalid API URL')
+        mode = f'<html lang="ko" data-mode="cloud" data-api="{api_base.rstrip("/")}">'
+    index.write_text(index.read_text(encoding='utf-8').replace('<html lang="ko">', mode), encoding='utf-8')
     # ponytail: one snapshot for <=30 keywords; split by keyword if download size becomes a problem.
     snapshot = {'schema': 1, 'generatedAt': datetime.now(KST).isoformat(), 'repository': repository,
                 'sources': SOURCES, 'topics': store.topics(),
@@ -98,6 +105,7 @@ def main():
     parser.add_argument('--keywords', type=Path, default=ROOT / 'keywords.json')
     parser.add_argument('--collect', action='store_true')
     parser.add_argument('--push-state', action='store_true')
+    parser.add_argument('--api-base', default='')
     args = parser.parse_args()
     topics = read_topics(args.keywords)
     with TemporaryDirectory() as temporary:
@@ -112,7 +120,7 @@ def main():
                 store.run_due(collect)
             finally:
                 save_state(store, args.state, args.push_state)
-        build_site(store, args.output, args.repository)
+        build_site(store, args.output, args.repository, args.api_base)
         failed = [topic['keyword'] for topic in topics if store.feed(topic['keyword'])['collection']['status'] in ('error', 'interrupted')]
         print(f'Built {len(topics)} keywords; collection errors: {len(failed)}')
         if failed:
