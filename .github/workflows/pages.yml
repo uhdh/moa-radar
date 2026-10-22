@@ -1,0 +1,50 @@
+name: Collect and deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['state/**']
+  schedule:
+    - cron: '0 0 * * *' # 09:00 Asia/Seoul; GitHub may delay scheduled runs.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Check collection and display logic
+        run: |
+          python check.py
+          python check_daily.py
+          python check_publish.py
+          node check_dates.mjs
+          node check_keyword.mjs
+      - name: Collect saved keywords and build site
+        run: python publish.py --collect --push-state --repository "$GITHUB_REPOSITORY"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
+        id: deployment
